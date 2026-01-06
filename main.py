@@ -2,6 +2,7 @@
 """WhatsApp Wrapped 2025 - Spotify-style chat analysis."""
 
 import argparse
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -49,12 +50,13 @@ def run_wrapped(
     quick_mode: bool = False,
     output_file: Path | None = None,
     rebuild_index: bool = False,
-    index_only: bool = False
+    index_only: bool = False,
+    chat_model: str = "openai/gpt-oss-20b"
 ) -> None:
     """Run the full Wrapped generation pipeline."""
 
     # Initialize LM Studio client
-    client = LMStudioClient()
+    client = LMStudioClient(chat_model=chat_model)
 
     # Check LM Studio availability
     if not check_lm_studio(client):
@@ -138,6 +140,8 @@ def run_wrapped(
 
     # Usage graphs
     print_usage_graphs(analytics.participant_stats)
+    if recorder:
+        recorder.add_usage_graphs(analytics.participant_stats)
 
     print_divider()
     if recorder:
@@ -195,16 +199,21 @@ def main():
 Examples:
   python main.py chat.txt
   python main.py chat.txt --name "The Squad"
-  python main.py chat.txt --group-only
+  python main.py chat.txt --name "The Squad" --output wrapped.txt
   python main.py chat.txt --output wrapped.txt
-  python main.py chat.txt -o  # Auto-generate filename
+  python main.py chat.txt -o  # Auto-generate filename from chat file
+  python main.py chat.txt --name "Dortmunders Wrapped 2025" -o  # Auto-generate filename from name
   python main.py chat.txt --rebuild-index  # Force fresh feature extraction
   python main.py chat.txt --index-only  # Just build index, don't display
 
 Requirements:
   LM Studio must be running at http://127.0.0.1:1234 with:
   - Embedding model: text-embedding-nomic-embed-text-v1.5
-  - LLM model: openai/gpt-oss-20b
+  - LLM model: Use --chat-model to select (default: openai/gpt-oss-20b)
+
+Available chat models:
+  qwen/qwen3-vl-4b, openai/gpt-oss-20b, google/gemma-3n-e4b,
+  qwen/qwen3-30b-a3b-2507, gemma-3-270m-it
         """
     )
 
@@ -235,7 +244,7 @@ Requirements:
         nargs='?',
         const='auto',
         default=None,
-        help="Output to a .txt file. Provide a filename or use without argument for auto-generated name"
+        help="Output to a .txt file. Provide a filename, use without argument for auto-generated name, or combine with --name for name-based filename"
     )
     parser.add_argument(
         "--rebuild-index",
@@ -246,6 +255,19 @@ Requirements:
         "--index-only",
         action="store_true",
         help="Only build/update the feature index without generating Wrapped output"
+    )
+    parser.add_argument(
+        "--chat-model",
+        type=str,
+        default="openai/gpt-oss-20b",
+        choices=[
+            "qwen/qwen3-vl-4b",
+            "openai/gpt-oss-20b",
+            "google/gemma-3n-e4b",
+            "qwen/qwen3-30b-a3b-2507",
+            "gemma-3-270m-it",
+        ],
+        help="LLM model to use for chat completions (default: openai/gpt-oss-20b)"
     )
 
     args = parser.parse_args()
@@ -259,14 +281,24 @@ Requirements:
     output_file = None
     if args.output:
         if args.output == 'auto':
-            # Auto-generate filename
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            chat_stem = args.chat_file.stem.replace(' ', '-')[:30]
-            output_file = Path(f"wrapped-{chat_stem}-{timestamp}.txt")
+            # Auto-generate filename from name or chat file
+            if args.name:
+                name_slug = re.sub(r'[^a-zA-Z0-9]+', '-', args.name).strip('-').lower()
+                timestamp = datetime.now().strftime('%m-%d--%H-%M')
+                output_file = Path(f"{name_slug}-{timestamp}.txt")
+            else:
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                chat_stem = args.chat_file.stem.replace(' ', '-')[:30]
+                output_file = Path(f"wrapped-{chat_stem}-{timestamp}.txt")
         else:
             output_file = Path(args.output)
             if not output_file.suffix:
                 output_file = output_file.with_suffix('.txt')
+    elif args.name:
+        # Auto-generate filename from name when --name is provided
+        name_slug = re.sub(r'[^a-zA-Z0-9]+', '-', args.name).strip('-').lower()
+        timestamp = datetime.now().strftime('%m-%d--%H-%M')
+        output_file = Path(f"{name_slug}-{timestamp}.txt")
 
     try:
         run_wrapped(
@@ -276,7 +308,8 @@ Requirements:
             quick_mode=args.quick,
             output_file=output_file,
             rebuild_index=args.rebuild_index,
-            index_only=args.index_only
+            index_only=args.index_only,
+            chat_model=args.chat_model
         )
     except KeyboardInterrupt:
         console.print("\n[dim]Wrapped generation cancelled.[/]")

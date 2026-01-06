@@ -44,6 +44,14 @@ PARTICIPANT_COLORS = [
     '#34D399',  # Emerald
 ]
 
+# Characters for distinguishing participants in plain text output
+PARTICIPANT_CHARS = ['█', '▓', '▒', '░', '#', '=', '*', '+']
+
+
+def get_participant_char(index: int) -> str:
+    """Get a character for a participant by index (for plain text output)."""
+    return PARTICIPANT_CHARS[index % len(PARTICIPANT_CHARS)]
+
 
 def get_participant_color(index: int) -> str:
     """Get a color for a participant by index."""
@@ -662,6 +670,132 @@ class WrappedRecorder:
         self.lines.append("")
         self.lines.append("  * * *")
         self.lines.append("")
+
+    def add_usage_graphs(self, participant_stats: dict[str, 'ParticipantStats']) -> None:
+        """Add ASCII bar graphs of group activity for text output."""
+        from datetime import datetime
+
+        self.add_subsection("GROUP ACTIVITY BREAKDOWN")
+
+        # Get all participants
+        names = list(participant_stats.keys())
+        short_names = [n.split()[0][:8] for n in names]  # First name, max 8 chars
+        max_name_len = max(len(n) for n in short_names)
+
+        # Get character for each participant
+        participant_chars = [get_participant_char(i) for i in range(len(names))]
+
+        # 1. Messages per month (last 12 months)
+        self.add_line("MESSAGES PER MONTH (last 12 months)")
+        self.add_line("")
+
+        # Collect all months across all participants
+        all_months: set[str] = set()
+        for stats in participant_stats.values():
+            all_months.update(stats.messages_by_month.keys())
+
+        if all_months:
+            sorted_months = sorted(all_months)[-12:]  # Last 12 months
+
+            # Find max for scaling
+            max_monthly = 1
+            for stats in participant_stats.values():
+                for month in sorted_months:
+                    max_monthly = max(max_monthly, stats.messages_by_month.get(month, 0))
+
+            bar_width = 15  # Max bar width per participant
+
+            for month in sorted_months:
+                try:
+                    month_label = datetime.strptime(month, '%Y-%m').strftime('%b %y')
+                except:
+                    month_label = month
+
+                line = f"  {month_label:>6} "
+                for i, (name, stats) in enumerate(participant_stats.items()):
+                    count = stats.messages_by_month.get(month, 0)
+                    bar_len = int((count / max_monthly) * bar_width) if max_monthly > 0 else 0
+                    char = participant_chars[i]
+                    bar = char * bar_len
+                    line += f"{bar:<{bar_width}} "
+                self.add_line(line.rstrip())
+
+            # Legend
+            self.add_line("")
+            legend = "  Legend: "
+            for i, short_name in enumerate(short_names):
+                char = participant_chars[i]
+                legend += f"{char}{char} = {short_name}  "
+            self.add_line(legend.rstrip())
+
+        # 2. Day of week activity
+        self.add_line("")
+        self.add_line("MOST ACTIVE DAYS")
+        self.add_line("")
+
+        days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        day_abbrevs = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+        # Find max for scaling
+        max_daily = 1
+        for stats in participant_stats.values():
+            for day in days:
+                max_daily = max(max_daily, stats.messages_by_weekday.get(day, 0))
+
+        bar_width = 8
+
+        for i, (name, stats) in enumerate(participant_stats.items()):
+            short_name = short_names[i]
+            char = participant_chars[i]
+            empty_char = ' '
+            line = f"  {short_name:>{max_name_len}} "
+            for day in days:
+                count = stats.messages_by_weekday.get(day, 0)
+                bar_len = int((count / max_daily) * bar_width) if max_daily > 0 else 0
+                bar = char * bar_len + empty_char * (bar_width - bar_len)
+                line += bar
+            self.add_line(line.rstrip())
+
+        # Day labels
+        label_line = f"  {' ' * max_name_len} "
+        for abbrev in day_abbrevs:
+            label_line += f"{abbrev:^{bar_width}}"
+        self.add_line(label_line.rstrip())
+
+        # 3. Peak hours
+        self.add_line("")
+        self.add_line("PEAK HOURS")
+        self.add_line("")
+
+        # Find max for scaling
+        max_hourly = 1
+        for stats in participant_stats.values():
+            for hour in range(24):
+                max_hourly = max(max_hourly, stats.messages_by_hour.get(hour, 0))
+
+        # Show 24 hour timeline compressed
+        for i, (name, stats) in enumerate(participant_stats.items()):
+            short_name = short_names[i]
+            char = participant_chars[i]
+            line = f"  {short_name:>{max_name_len}} "
+            for hour in range(24):
+                count = stats.messages_by_hour.get(hour, 0)
+                intensity = count / max_hourly if max_hourly > 0 else 0
+                if intensity > 0.7:
+                    line += char
+                elif intensity > 0.4:
+                    line += char
+                elif intensity > 0.2:
+                    line += '·'
+                elif intensity > 0.05:
+                    line += '.'
+                else:
+                    line += ' '
+            self.add_line(line.rstrip())
+
+        # Hour labels
+        self.add_line(f"  {' ' * max_name_len} 0   3   6   9   12  15  18  21  24")
+        self.add_line("")
 
     def add_topic_timeline(self, timeline: TopicTimeline) -> None:
         """Record topic timeline output."""
