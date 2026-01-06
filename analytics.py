@@ -41,6 +41,8 @@ class ParticipantStats:
     top_emojis: list[tuple[str, int]] = field(default_factory=list)
     messages_by_hour: dict[int, int] = field(default_factory=dict)
     messages_by_day: dict[str, int] = field(default_factory=dict)
+    messages_by_weekday: dict[str, int] = field(default_factory=dict)
+    messages_by_month: dict[str, int] = field(default_factory=dict)
     conversation_starts: int = 0
     avg_message_length: float = 0.0
     longest_message: Message | None = None
@@ -104,6 +106,8 @@ def compute_participant_stats(name: str, messages: list[Message]) -> Participant
     emoji_counter: Counter[str] = Counter()
     messages_by_hour: Counter[int] = Counter()
     messages_by_day: Counter[str] = Counter()
+    messages_by_weekday: Counter[str] = Counter()
+    messages_by_month: Counter[str] = Counter()
 
     for msg in messages:
         # Word and character counts
@@ -130,6 +134,8 @@ def compute_participant_stats(name: str, messages: list[Message]) -> Participant
         messages_by_hour[msg.timestamp.hour] += 1
         day_key = msg.timestamp.strftime('%Y-%m-%d')
         messages_by_day[day_key] += 1
+        messages_by_weekday[msg.timestamp.strftime('%A')] += 1
+        messages_by_month[msg.timestamp.strftime('%Y-%m')] += 1
 
         # Longest message
         if stats.longest_message is None or len(msg.content) > len(stats.longest_message.content):
@@ -138,6 +144,8 @@ def compute_participant_stats(name: str, messages: list[Message]) -> Participant
     # Store counters
     stats.messages_by_hour = dict(messages_by_hour)
     stats.messages_by_day = dict(messages_by_day)
+    stats.messages_by_weekday = dict(messages_by_weekday)
+    stats.messages_by_month = dict(messages_by_month)
 
     # Top emojis
     stats.top_emojis = emoji_counter.most_common(10)

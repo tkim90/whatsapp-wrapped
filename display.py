@@ -11,8 +11,9 @@ from rich.align import Align
 from rich.style import Style
 from rich.box import HEAVY, DOUBLE, ROUNDED, ASCII
 
-from analytics import ChatAnalytics
-from wrapped import ParticipantWrapped, GroupWrapped, Award
+from analytics import ChatAnalytics, ParticipantStats
+from features import TopicTimeline, ConversationThread, PersonalityProfile
+from wrapped import ParticipantWrapped, GroupWrapped, Achievement
 
 
 console = Console()
@@ -105,20 +106,11 @@ def print_big_stat(label: str, value: str, color: str = COLORS['primary']) -> No
     console.print()
 
 
-def print_award(award: Award, color: str = COLORS['accent1']) -> None:
-    """Print an award with style."""
-    award_box = f"""
-    [bold {color}]{award.title}[/]
-    [dim]{award.description}[/]
-    [bold white]{award.value}[/]
-    """
-    panel = Panel(
-        award_box,
-        box=ROUNDED,
-        border_style=color,
-        padding=(0, 2),
-    )
-    console.print(panel)
+def print_achievement(achievement: Achievement, color: str = COLORS['accent1']) -> None:
+    """Print a video-game style achievement."""
+    console.print(f"  [{color}]{achievement.emoji}  {achievement.title}[/]")
+    console.print(f"      [dim]{achievement.description}[/]")
+    console.print()
 
 
 def print_quote(quote: str, color: str = COLORS['accent2']) -> None:
@@ -133,16 +125,18 @@ def print_quote(quote: str, color: str = COLORS['accent2']) -> None:
 def print_participant_wrapped(wrapped: ParticipantWrapped, index: int = 0) -> None:
     """Print a participant's full Wrapped summary."""
     color = get_participant_color(index)
+    name = wrapped.name
+    first_name = name.split()[0]  # Use first name for labels
 
     # Big name reveal
     console.print()
-    console.print(Align.center(Text("YOUR WRAPPED FOR...", style="dim italic")))
+    console.print(Align.center(Text(f"{name.upper()}'S WRAPPED", style="dim italic")))
     dramatic_pause(0.5)
 
     name_art = f"""
-    ╔{'═' * (len(wrapped.name) + 4)}╗
-    ║  {wrapped.name.upper()}  ║
-    ╚{'═' * (len(wrapped.name) + 4)}╝
+    ╔{'═' * (len(name) + 4)}╗
+    ║  {name.upper()}  ║
+    ╚{'═' * (len(name) + 4)}╝
     """
     console.print(Align.center(Text(name_art, style=f"bold {color}")))
 
@@ -161,7 +155,6 @@ def print_participant_wrapped(wrapped: ParticipantWrapped, index: int = 0) -> No
     stats_table.add_row("Messages", f"{stats.total_messages:,}")
     stats_table.add_row("Words", f"{stats.total_words:,}")
     stats_table.add_row("Links Shared", f"{stats.url_count}")
-    stats_table.add_row("Emojis Used", f"{stats.emoji_count}")
     stats_table.add_row("Avg Length", f"{stats.avg_message_length:.0f} chars")
 
     console.print()
@@ -170,7 +163,7 @@ def print_participant_wrapped(wrapped: ParticipantWrapped, index: int = 0) -> No
     # Personality
     if wrapped.personality_summary:
         console.print()
-        print_section_header("YOUR VIBE", color)
+        print_section_header(f"{first_name.upper()}'S VIBE", color)
         console.print(Panel(
             f"[italic]{wrapped.personality_summary}[/]",
             box=ROUNDED,
@@ -181,31 +174,28 @@ def print_participant_wrapped(wrapped: ParticipantWrapped, index: int = 0) -> No
     # Top topics
     if wrapped.top_topics:
         console.print()
-        print_section_header("YOU TALKED ABOUT", color)
+        print_section_header(f"{first_name.upper()} TALKED ABOUT", color)
         for i, topic in enumerate(wrapped.top_topics, 1):
             console.print(f"  [{color}]{i}.[/] {topic}")
 
     # Memorable quotes
     if wrapped.memorable_quotes:
         console.print()
-        print_section_header("QUOTABLE MOMENTS", color)
+        print_section_header(f"{first_name.upper()}'S GREATEST HITS", color)
         for quote in wrapped.memorable_quotes:
             print_quote(quote, color)
             console.print()
 
-    # Awards
-    if wrapped.awards:
+    # Achievements
+    if wrapped.achievements:
         console.print()
-        print_section_header("YOUR AWARDS", color)
-        for award in wrapped.awards:
-            print_award(award, color)
+        print_section_header(f"{first_name.upper()}'S ACHIEVEMENTS UNLOCKED 🏆", color)
+        for achievement in wrapped.achievements:
+            print_achievement(achievement, color)
 
-    # Top emojis
-    if stats.top_emojis:
-        console.print()
-        print_section_header("YOUR TOP EMOJIS", color)
-        emoji_str = "  ".join(f"{emoji} ({count})" for emoji, count in stats.top_emojis[:5])
-        console.print(Align.center(Text(emoji_str, style="bold")))
+    # Personality archetype (from features)
+    if wrapped.personality_profile:
+        print_personality_archetype(wrapped.personality_profile, color, first_name)
 
     console.print()
     console.rule(style="dim")
@@ -255,15 +245,25 @@ def print_group_wrapped(wrapped: GroupWrapped, analytics: ChatAnalytics) -> None
 
     console.print(Align.center(stats_table))
 
-    # Awards ceremony
-    if wrapped.awards_ceremony:
+    # Achievements ceremony
+    if wrapped.achievements_ceremony:
         console.print()
-        print_section_header("AWARDS CEREMONY", COLORS['accent3'])
+        print_section_header("ACHIEVEMENTS UNLOCKED 🏆", COLORS['accent3'])
 
-        for name, award in wrapped.awards_ceremony:
-            console.print(f"  [{COLORS['accent3']}]{award.title}[/] goes to... [bold]{name}[/]")
-            console.print(f"    [dim]{award.value}[/]")
+        for name, achievement in wrapped.achievements_ceremony:
+            console.print(f"  [{COLORS['accent3']}]{achievement.emoji}  {achievement.title}[/] — [bold]{name}[/]")
+            console.print(f"      [dim]{achievement.description}[/]")
             console.print()
+
+    # Topic timeline (from features)
+    if wrapped.topic_timeline:
+        console.print()
+        print_topic_timeline(wrapped.topic_timeline)
+
+    # Top threads (from features)
+    if wrapped.top_threads:
+        console.print()
+        print_top_threads(wrapped.top_threads)
 
 
 def print_loading_screen() -> None:
@@ -306,6 +306,300 @@ def print_divider() -> None:
 
 
 # ============================================================================
+# New Feature Display Functions
+# ============================================================================
+
+def print_topic_timeline(timeline: TopicTimeline, color: str = COLORS['accent2']) -> None:
+    """Print the topic timeline with monthly/yearly breakdown."""
+    print_section_header("YOUR YEAR IN TOPICS", color)
+
+    # Group by year for display
+    months_by_year: dict[str, list[tuple[str, list[str]]]] = {}
+    for month_key in sorted(timeline.topics_by_month.keys()):
+        year = month_key[:4]
+        if year not in months_by_year:
+            months_by_year[year] = []
+        months_by_year[year].append((month_key, timeline.topics_by_month[month_key]))
+
+    for year in sorted(months_by_year.keys()):
+        console.print(f"\n[bold {color}]{year}[/]")
+        for month_key, topics in months_by_year[year]:
+            # Format month name
+            try:
+                from datetime import datetime
+                month_name = datetime.strptime(month_key, '%Y-%m').strftime('%B')
+            except:
+                month_name = month_key
+            topics_str = ', '.join(topics[:4])  # Show top 4 topics
+            console.print(f"  [dim]{month_name}:[/] {topics_str}")
+
+    # Overall top topics
+    if timeline.aggregate_topics:
+        console.print()
+        console.print(f"[bold {color}]Top Topics Overall:[/]")
+        for i, topic in enumerate(timeline.aggregate_topics[:5], 1):
+            console.print(f"  {i}. {topic}")
+
+
+def print_top_threads(threads: list[ConversationThread], color: str = COLORS['accent1']) -> None:
+    """Print the top conversation threads."""
+    print_section_header("TOP 5 CONVERSATIONS THIS YEAR", color)
+
+    thread_emojis = ["🔥", "💬", "⚡", "🎯", "💡"]
+
+    for i, thread in enumerate(threads[:5]):
+        emoji = thread_emojis[i] if i < len(thread_emojis) else "💬"
+        date_str = thread.start_time.strftime('%b %d, %Y')
+
+        console.print(f"\n[bold {color}]#{i+1} {emoji} {date_str}[/]")
+        console.print(f"   [dim]{thread.message_count} messages over {thread.duration_minutes} minutes[/]")
+        console.print(f"   [dim]Participants:[/] {', '.join(thread.participants)}")
+        if thread.topic_summary:
+            console.print(f"   [italic]About:[/] {thread.topic_summary}")
+
+
+def print_personality_archetype(profile: PersonalityProfile, color: str = COLORS['accent4'], name: str = "") -> None:
+    """Print personality archetype with dramatic reveal."""
+    console.print()
+    name_prefix = f"{name.upper()}'S" if name else "YOUR"
+    print_section_header(f"{name_prefix} ARCHETYPE: {profile.archetype.upper()} {profile.archetype_emoji}", color)
+
+    if profile.archetype_reason:
+        console.print(Panel(
+            f"[italic]{profile.archetype_reason}[/]",
+            box=ROUNDED,
+            border_style=color,
+            padding=(1, 2),
+        ))
+
+    # Celebrity match
+    if profile.celebrity_match:
+        console.print()
+        celeb_intro = f"If {name} were a celebrity..." if name else "If you were a celebrity..."
+        console.print(Align.center(Text(celeb_intro, style="dim italic")))
+        dramatic_pause(0.3)
+        console.print(Align.center(Text(profile.celebrity_match, style=f"bold {COLORS['accent3']}")))
+        if profile.celebrity_reason:
+            console.print(Align.center(Text(f'"{profile.celebrity_reason}"', style="italic dim")))
+
+    # Superpower
+    if profile.superpower:
+        console.print()
+        possessive = f"{name}'s" if name else "Your"
+        console.print(f"[bold {color}]{possessive} Superpower:[/] {profile.superpower}")
+
+
+# ============================================================================
+# Usage Graphs
+# ============================================================================
+
+def print_usage_graphs(participant_stats: dict[str, ParticipantStats], color: str = COLORS['accent2']) -> None:
+    """Print ASCII bar graphs of group activity."""
+    from datetime import datetime
+
+    print_section_header("GROUP ACTIVITY BREAKDOWN", color)
+
+    # Get all participants
+    names = list(participant_stats.keys())
+    short_names = [n.split()[0][:8] for n in names]  # First name, max 8 chars
+    max_name_len = max(len(n) for n in short_names)
+
+    # Define bar characters
+    bar_char = "█"
+    empty_char = "░"
+
+    # 1. Messages per month (last 12 months)
+    console.print(f"\n[bold {color}]MESSAGES PER MONTH (last 12 months)[/]")
+    console.print()
+
+    # Collect all months across all participants
+    all_months: set[str] = set()
+    for stats in participant_stats.values():
+        all_months.update(stats.messages_by_month.keys())
+
+    if all_months:
+        sorted_months = sorted(all_months)[-12:]  # Last 12 months
+
+        # Find max for scaling
+        max_monthly = 1
+        for stats in participant_stats.values():
+            for month in sorted_months:
+                max_monthly = max(max_monthly, stats.messages_by_month.get(month, 0))
+
+        bar_width = 20  # Max bar width
+
+        for month in sorted_months:
+            try:
+                month_label = datetime.strptime(month, '%Y-%m').strftime('%b %y')
+            except:
+                month_label = month
+
+            console.print(f"  [dim]{month_label:>6}[/] ", end="")
+            for i, (name, stats) in enumerate(participant_stats.items()):
+                count = stats.messages_by_month.get(month, 0)
+                bar_len = int((count / max_monthly) * bar_width) if max_monthly > 0 else 0
+                bar = bar_char * bar_len
+                p_color = get_participant_color(i)
+                console.print(f"[{p_color}]{bar:<{bar_width}}[/] ", end="")
+            console.print()
+
+        # Legend
+        console.print()
+        console.print("  Legend: ", end="")
+        for i, short_name in enumerate(short_names):
+            p_color = get_participant_color(i)
+            console.print(f"[{p_color}]{bar_char}{bar_char}[/] {short_name}  ", end="")
+        console.print()
+
+    # 2. Day of week activity
+    console.print(f"\n[bold {color}]MOST ACTIVE DAYS[/]")
+    console.print()
+
+    days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    day_abbrevs = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+    # Find max for scaling
+    max_daily = 1
+    for stats in participant_stats.values():
+        for day in days:
+            max_daily = max(max_daily, stats.messages_by_weekday.get(day, 0))
+
+    bar_width = 10
+
+    for i, (name, stats) in enumerate(participant_stats.items()):
+        p_color = get_participant_color(i)
+        short_name = short_names[i]
+        console.print(f"  [{p_color}]{short_name:>{max_name_len}}[/] ", end="")
+        for day in days:
+            count = stats.messages_by_weekday.get(day, 0)
+            bar_len = int((count / max_daily) * bar_width) if max_daily > 0 else 0
+            bar = bar_char * bar_len + empty_char * (bar_width - bar_len)
+            console.print(f"[{p_color}]{bar}[/]", end="")
+        console.print()
+
+    # Day labels
+    console.print(f"  {' ' * max_name_len} ", end="")
+    for abbrev in day_abbrevs:
+        console.print(f"[dim]{abbrev:^{bar_width}}[/]", end="")
+    console.print()
+
+    # 3. Peak hours
+    console.print(f"\n[bold {color}]PEAK HOURS[/]")
+    console.print()
+
+    # Find max for scaling
+    max_hourly = 1
+    for stats in participant_stats.values():
+        for hour in range(24):
+            max_hourly = max(max_hourly, stats.messages_by_hour.get(hour, 0))
+
+    # Show 24 hour timeline compressed
+    for i, (name, stats) in enumerate(participant_stats.items()):
+        p_color = get_participant_color(i)
+        short_name = short_names[i]
+        console.print(f"  [{p_color}]{short_name:>{max_name_len}}[/] ", end="")
+        for hour in range(24):
+            count = stats.messages_by_hour.get(hour, 0)
+            intensity = count / max_hourly if max_hourly > 0 else 0
+            if intensity > 0.7:
+                char = "█"
+            elif intensity > 0.4:
+                char = "▓"
+            elif intensity > 0.2:
+                char = "▒"
+            elif intensity > 0.05:
+                char = "░"
+            else:
+                char = " "
+            console.print(f"[{p_color}]{char}[/]", end="")
+        console.print()
+
+    # Hour labels
+    console.print(f"  {' ' * max_name_len} [dim]0   3   6   9   12  15  18  21  24[/]")
+    console.print()
+
+
+def print_archetype_cards(
+    profiles_and_stats: list[tuple[str, PersonalityProfile | None, ParticipantStats]]
+) -> None:
+    """Print all archetypes side-by-side as cards at the end."""
+    print_section_header("THE SQUAD", COLORS['primary'])
+
+    card_width = 23
+    num_cards = len(profiles_and_stats)
+
+    # Build card lines for each person
+    all_card_lines: list[list[str]] = []
+
+    for name, profile, stats in profiles_and_stats:
+        lines = []
+        first_name = name.split()[0]
+
+        # Top border
+        lines.append(f"╔{'═' * (card_width - 2)}╗")
+
+        # Archetype line
+        if profile:
+            archetype_text = f"{profile.archetype_emoji} {profile.archetype.upper()}"
+        else:
+            archetype_text = "? MYSTERY"
+        archetype_text = archetype_text[:card_width - 4].center(card_width - 4)
+        lines.append(f"║ {archetype_text} ║")
+
+        # Divider
+        lines.append(f"╠{'═' * (card_width - 2)}╣")
+
+        # Empty line
+        lines.append(f"║{' ' * (card_width - 2)}║")
+
+        # Name
+        name_centered = first_name.upper().center(card_width - 4)
+        lines.append(f"║ {name_centered} ║")
+
+        # Empty line
+        lines.append(f"║{' ' * (card_width - 2)}║")
+
+        # Message count
+        msg_text = f"{stats.total_messages:,} msgs"
+        msg_centered = msg_text.center(card_width - 4)
+        lines.append(f"║ {msg_centered} ║")
+
+        # Empty line
+        lines.append(f"║{' ' * (card_width - 2)}║")
+
+        # Celebrity (truncated)
+        if profile and profile.celebrity_match:
+            # Extract just the name, truncate if needed
+            celeb = profile.celebrity_match.split('–')[0].split('-')[0].strip()
+            celeb = celeb.replace('**', '').strip()
+            if len(celeb) > card_width - 6:
+                celeb = celeb[:card_width - 9] + "..."
+            celeb_centered = f'"{celeb}"'.center(card_width - 4)
+        else:
+            celeb_centered = '""'.center(card_width - 4)
+        lines.append(f"║ {celeb_centered} ║")
+
+        # Empty line
+        lines.append(f"║{' ' * (card_width - 2)}║")
+
+        # Bottom border
+        lines.append(f"╚{'═' * (card_width - 2)}╝")
+
+        all_card_lines.append(lines)
+
+    # Print cards side by side
+    num_lines = len(all_card_lines[0]) if all_card_lines else 0
+    for line_idx in range(num_lines):
+        line_parts = []
+        for card_idx, card_lines in enumerate(all_card_lines):
+            color = get_participant_color(card_idx)
+            line_parts.append(f"[{color}]{card_lines[line_idx]}[/]")
+        console.print("  " + "   ".join(line_parts))
+
+    console.print()
+
+
+# ============================================================================
 # File Output Support
 # ============================================================================
 
@@ -317,7 +611,7 @@ class WrappedRecorder:
 
     def add_header(self) -> None:
         """Add the header to recorded output."""
-        self.lines.append("""
+        self.lines.append(r"""
 ================================================================================
  __        ___   _    _  _____ ____    _    ____  ____   __        ______      _    ____  ____  _____ ____
  \ \      / / | | |  / \|_   _/ ___|  / \  |  _ \|  _ \  \ \      / /  _ \    / \  |  _ \|  _ \| ____|  _ \
@@ -357,11 +651,10 @@ class WrappedRecorder:
             quote = quote[:197] + "..."
         self.lines.append(f'  "{quote}"')
 
-    def add_award(self, award: Award) -> None:
-        """Add an award."""
-        self.lines.append(f"  [{award.title}]")
-        self.lines.append(f"    {award.description}")
-        self.lines.append(f"    => {award.value}")
+    def add_achievement(self, achievement: Achievement) -> None:
+        """Add an achievement."""
+        self.lines.append(f"  {achievement.emoji}  {achievement.title}")
+        self.lines.append(f"      {achievement.description}")
         self.lines.append("")
 
     def add_divider(self) -> None:
@@ -369,6 +662,73 @@ class WrappedRecorder:
         self.lines.append("")
         self.lines.append("  * * *")
         self.lines.append("")
+
+    def add_topic_timeline(self, timeline: TopicTimeline) -> None:
+        """Record topic timeline output."""
+        self.add_subsection("YOUR YEAR IN TOPICS")
+
+        # Group by year
+        from datetime import datetime
+        months_by_year: dict[str, list[tuple[str, list[str]]]] = {}
+        for month_key in sorted(timeline.topics_by_month.keys()):
+            year = month_key[:4]
+            if year not in months_by_year:
+                months_by_year[year] = []
+            months_by_year[year].append((month_key, timeline.topics_by_month[month_key]))
+
+        for year in sorted(months_by_year.keys()):
+            self.add_line(f"\n{year}")
+            for month_key, topics in months_by_year[year]:
+                try:
+                    month_name = datetime.strptime(month_key, '%Y-%m').strftime('%B')
+                except:
+                    month_name = month_key
+                topics_str = ', '.join(topics[:4])
+                self.add_line(f"  {month_name}: {topics_str}")
+
+        if timeline.aggregate_topics:
+            self.add_line("")
+            self.add_line("Top Topics Overall:")
+            for i, topic in enumerate(timeline.aggregate_topics[:5], 1):
+                self.add_line(f"  {i}. {topic}")
+
+    def add_top_threads(self, threads: list[ConversationThread]) -> None:
+        """Record top conversation threads."""
+        self.add_subsection("TOP 5 CONVERSATIONS THIS YEAR")
+
+        thread_emojis = ["[FIRE]", "[CHAT]", "[BOLT]", "[TARGET]", "[IDEA]"]
+
+        for i, thread in enumerate(threads[:5]):
+            emoji = thread_emojis[i] if i < len(thread_emojis) else "[CHAT]"
+            date_str = thread.start_time.strftime('%b %d, %Y')
+
+            self.add_line(f"#{i+1} {emoji} {date_str}")
+            self.add_line(f"   {thread.message_count} messages over {thread.duration_minutes} minutes")
+            self.add_line(f"   Participants: {', '.join(thread.participants)}")
+            if thread.topic_summary:
+                self.add_line(f"   About: {thread.topic_summary}")
+            self.add_line("")
+
+    def add_personality_archetype(self, profile: PersonalityProfile, name: str = "") -> None:
+        """Record personality archetype output."""
+        name_prefix = f"{name.upper()}'S" if name else "YOUR"
+        self.add_subsection(f"{name_prefix} ARCHETYPE: {profile.archetype.upper()} {profile.archetype_emoji}")
+
+        if profile.archetype_reason:
+            self.add_line(profile.archetype_reason)
+
+        if profile.celebrity_match:
+            self.add_line("")
+            celeb_intro = f"If {name} were a celebrity..." if name else "If you were a celebrity..."
+            self.add_line(celeb_intro)
+            self.add_line(f"  {profile.celebrity_match}")
+            if profile.celebrity_reason:
+                self.add_line(f'  "{profile.celebrity_reason}"')
+
+        if profile.superpower:
+            self.add_line("")
+            possessive = f"{name}'s" if name else "Your"
+            self.add_line(f"{possessive} Superpower: {profile.superpower}")
 
     def add_group_wrapped(self, wrapped: GroupWrapped, analytics: ChatAnalytics) -> None:
         """Record group wrapped output."""
@@ -391,16 +751,27 @@ class WrappedRecorder:
         if gs.busiest_date:
             self.add_stat("Busiest Day Ever", f"{gs.busiest_date} ({gs.busiest_date_count} msgs)")
 
-        if wrapped.awards_ceremony:
-            self.add_subsection("AWARDS CEREMONY")
-            for name, award in wrapped.awards_ceremony:
-                self.add_line(f"  {award.title} goes to... {name}")
-                self.add_line(f"    {award.value}")
+        if wrapped.achievements_ceremony:
+            self.add_subsection("ACHIEVEMENTS UNLOCKED")
+            for name, achievement in wrapped.achievements_ceremony:
+                self.add_line(f"  {achievement.emoji}  {achievement.title} — {name}")
+                self.add_line(f"      {achievement.description}")
                 self.add_line("")
+
+        # Topic timeline (from features)
+        if wrapped.topic_timeline:
+            self.add_topic_timeline(wrapped.topic_timeline)
+
+        # Top threads (from features)
+        if wrapped.top_threads:
+            self.add_top_threads(wrapped.top_threads)
 
     def add_participant_wrapped(self, wrapped: ParticipantWrapped) -> None:
         """Record participant wrapped output."""
-        self.add_section(f"{wrapped.name.upper()}'S WRAPPED")
+        name = wrapped.name
+        first_name = name.split()[0]  # Use first name for labels
+
+        self.add_section(f"{name.upper()}'S WRAPPED")
 
         if wrapped.tagline:
             self.add_line(f'"{wrapped.tagline}"')
@@ -411,33 +782,31 @@ class WrappedRecorder:
         self.add_stat("Messages", f"{stats.total_messages:,}")
         self.add_stat("Words", f"{stats.total_words:,}")
         self.add_stat("Links Shared", f"{stats.url_count}")
-        self.add_stat("Emojis Used", f"{stats.emoji_count}")
         self.add_stat("Avg Length", f"{stats.avg_message_length:.0f} chars")
 
         if wrapped.personality_summary:
-            self.add_subsection("YOUR VIBE")
+            self.add_subsection(f"{first_name.upper()}'S VIBE")
             self.add_line(wrapped.personality_summary)
 
         if wrapped.top_topics:
-            self.add_subsection("YOU TALKED ABOUT")
+            self.add_subsection(f"{first_name.upper()} TALKED ABOUT")
             for i, topic in enumerate(wrapped.top_topics, 1):
                 self.add_line(f"  {i}. {topic}")
 
         if wrapped.memorable_quotes:
-            self.add_subsection("QUOTABLE MOMENTS")
+            self.add_subsection(f"{first_name.upper()}'S GREATEST HITS")
             for quote in wrapped.memorable_quotes:
                 self.add_quote(quote)
                 self.add_line("")
 
-        if wrapped.awards:
-            self.add_subsection("YOUR AWARDS")
-            for award in wrapped.awards:
-                self.add_award(award)
+        if wrapped.achievements:
+            self.add_subsection(f"{first_name.upper()}'S ACHIEVEMENTS UNLOCKED")
+            for achievement in wrapped.achievements:
+                self.add_achievement(achievement)
 
-        if stats.top_emojis:
-            self.add_subsection("YOUR TOP EMOJIS")
-            emoji_str = "  ".join(f"{emoji} ({count})" for emoji, count in stats.top_emojis[:5])
-            self.add_line(f"  {emoji_str}")
+        # Personality archetype (from features)
+        if wrapped.personality_profile:
+            self.add_personality_archetype(wrapped.personality_profile, first_name)
 
     def add_outro(self) -> None:
         """Add the outro."""
@@ -466,12 +835,12 @@ if __name__ == '__main__':
 
     print_big_stat("You sent", "1,234 messages", COLORS['accent1'])
 
-    demo_award = Award(
-        title="TOP CHATTER",
-        description="Most messages sent",
-        value="7,345 messages"
+    demo_achievement = Achievement(
+        emoji="🗣️",
+        title="CHAT CHAMPION",
+        description="Typed 7,345 messages—more than a NaNoWriMo novel"
     )
-    print_award(demo_award)
+    print_achievement(demo_achievement)
 
     print_quote("Your mom is a GPT wrapper", COLORS['accent2'])
 

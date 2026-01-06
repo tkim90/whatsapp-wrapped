@@ -13,6 +13,7 @@ from parser import parse_chat
 from analytics import analyze_chat
 from lm_studio import LMStudioClient
 from wrapped import WrappedGenerator
+from features import load_or_extract_features, get_features_cache_path
 from display import (
     console,
     print_header,
@@ -20,6 +21,8 @@ from display import (
     print_participant_wrapped,
     print_divider,
     print_outro,
+    print_usage_graphs,
+    print_archetype_cards,
     dramatic_pause,
     COLORS,
     WrappedRecorder,
@@ -44,7 +47,9 @@ def run_wrapped(
     chat_name: str | None = None,
     skip_individuals: bool = False,
     quick_mode: bool = False,
-    output_file: Path | None = None
+    output_file: Path | None = None,
+    rebuild_index: bool = False,
+    index_only: bool = False
 ) -> None:
     """Run the full Wrapped generation pipeline."""
 
@@ -83,8 +88,28 @@ def run_wrapped(
     if not chat_name:
         chat_name = chat_file.stem.replace('-', ' ').replace('_', ' ').title()
 
-    # Initialize generator
-    generator = WrappedGenerator(chat, analytics, client)
+    # Extract deep features (topic timeline, conversations, personality archetypes)
+    features = None
+    if not quick_mode:
+        def feature_progress(msg):
+            console.print(f"  [dim]{msg}[/]")
+
+        console.print(f"\n[bold {COLORS['primary']}]Extracting deep features...[/]")
+        features = load_or_extract_features(
+            chat, chat_file, client,
+            force_rebuild=rebuild_index,
+            progress_callback=feature_progress
+        )
+        console.print(f"[bold green]Features ready![/]\n")
+
+        # If index-only mode, just save and exit
+        if index_only:
+            cache_path = get_features_cache_path(chat_file)
+            console.print(f"[bold green]Index saved to:[/] {cache_path}")
+            return
+
+    # Initialize generator with features
+    generator = WrappedGenerator(chat, analytics, client, features=features)
 
     # Initialize recorder for file output
     recorder = WrappedRecorder() if output_file else None
@@ -110,6 +135,10 @@ def run_wrapped(
     print_group_wrapped(group_wrapped, analytics)
     if recorder:
         recorder.add_group_wrapped(group_wrapped, analytics)
+
+    # Usage graphs
+    print_usage_graphs(analytics.participant_stats)
+
     print_divider()
     if recorder:
         recorder.add_divider()
@@ -140,6 +169,13 @@ def run_wrapped(
                     recorder.add_divider()
                 dramatic_pause(0.3)
 
+        # Show all archetypes side-by-side at the end
+        profiles_and_stats = [
+            (pw.name, pw.personality_profile, pw.stats)
+            for pw in participant_wrappeds
+        ]
+        print_archetype_cards(profiles_and_stats)
+
     print_outro()
     if recorder:
         recorder.add_outro()
@@ -162,6 +198,8 @@ Examples:
   python main.py chat.txt --group-only
   python main.py chat.txt --output wrapped.txt
   python main.py chat.txt -o  # Auto-generate filename
+  python main.py chat.txt --rebuild-index  # Force fresh feature extraction
+  python main.py chat.txt --index-only  # Just build index, don't display
 
 Requirements:
   LM Studio must be running at http://127.0.0.1:1234 with:
@@ -199,6 +237,16 @@ Requirements:
         default=None,
         help="Output to a .txt file. Provide a filename or use without argument for auto-generated name"
     )
+    parser.add_argument(
+        "--rebuild-index",
+        action="store_true",
+        help="Force rebuilding the feature index (topic timeline, personalities, etc.)"
+    )
+    parser.add_argument(
+        "--index-only",
+        action="store_true",
+        help="Only build/update the feature index without generating Wrapped output"
+    )
 
     args = parser.parse_args()
 
@@ -226,7 +274,9 @@ Requirements:
             chat_name=args.name,
             skip_individuals=args.group_only,
             quick_mode=args.quick,
-            output_file=output_file
+            output_file=output_file,
+            rebuild_index=args.rebuild_index,
+            index_only=args.index_only
         )
     except KeyboardInterrupt:
         console.print("\n[dim]Wrapped generation cancelled.[/]")

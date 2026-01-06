@@ -4,17 +4,18 @@ import random
 from dataclasses import dataclass, field
 
 from analytics import ChatAnalytics, ParticipantStats
+from features import ChatFeatures, PersonalityProfile, ConversationThread, TopicTimeline
 from lm_studio import LMStudioClient, get_client
 from parser import Chat, Message
 from search import MessageSearcher
 
 
 @dataclass
-class Award:
-    """A fun award for a participant."""
+class Achievement:
+    """A video-game style achievement for a participant."""
+    emoji: str
     title: str
     description: str
-    value: str
 
 
 @dataclass
@@ -25,9 +26,11 @@ class ParticipantWrapped:
     personality_summary: str = ""
     top_topics: list[str] = field(default_factory=list)
     memorable_quotes: list[str] = field(default_factory=list)
-    awards: list[Award] = field(default_factory=list)
+    achievements: list[Achievement] = field(default_factory=list)
     fun_fact: str = ""
     tagline: str = ""
+    # New: personality profile from features
+    personality_profile: PersonalityProfile | None = None
 
 
 @dataclass
@@ -38,7 +41,10 @@ class GroupWrapped:
     vibe_check: str = ""
     top_moments: list[str] = field(default_factory=list)
     group_personality: str = ""
-    awards_ceremony: list[tuple[str, Award]] = field(default_factory=list)
+    achievements_ceremony: list[tuple[str, Achievement]] = field(default_factory=list)
+    # New: from features
+    topic_timeline: TopicTimeline | None = None
+    top_threads: list[ConversationThread] = field(default_factory=list)
 
 
 class WrappedGenerator:
@@ -48,12 +54,14 @@ class WrappedGenerator:
         self,
         chat: Chat,
         analytics: ChatAnalytics,
-        client: LMStudioClient | None = None
+        client: LMStudioClient | None = None,
+        features: ChatFeatures | None = None
     ):
         self.chat = chat
         self.analytics = analytics
         self.client = client or get_client()
         self.searcher = MessageSearcher(chat.messages, self.client)
+        self.features = features  # Optional deep features
 
     def _sample_messages(
         self,
@@ -146,7 +154,7 @@ List exactly {n} topics, one per line (just the topic name, no numbers or bullet
         except Exception:
             return ["Life", "The Universe", "Everything"]
 
-    def find_memorable_quotes(self, name: str, n: int = 3) -> list[str]:
+    def find_memorable_quotes(self, name: str, n: int = 5) -> list[str]:
         """Find memorable/funny quotes from a participant using search."""
         messages = self.chat.messages_by_sender.get(name, [])
         if not messages:
@@ -203,76 +211,154 @@ Copy exactly {n} of the best quotes (just the quote text, one per line):"""
             # Fallback to random quotes
             return [m.content[:100] for m in random.sample(candidates, min(n, len(candidates)))]
 
-    def generate_awards(self, name: str) -> list[Award]:
-        """Generate fun awards based on statistics."""
+    def generate_achievements(self, name: str) -> list[Achievement]:
+        """Generate video-game style achievements based on statistics."""
         stats = self.analytics.participant_stats.get(name)
         if not stats:
             return []
 
-        awards = []
-
-        # Check various award criteria
+        achievements = []
         analytics = self.analytics
 
+        # Message volume achievements
         if name == analytics.get_top_chatter():
-            awards.append(Award(
-                title="TOP CHATTER",
-                description="Most messages sent",
-                value=f"{stats.total_messages:,} messages"
+            achievements.append(Achievement(
+                emoji="🗣️",
+                title="CHAT CHAMPION",
+                description=f"Typed {stats.total_messages:,} messages—more than a NaNoWriMo novel"
             ))
+        else:
+            # Check if they're the quietest
+            all_counts = [s.total_messages for s in analytics.participant_stats.values()]
+            if stats.total_messages == min(all_counts):
+                achievements.append(Achievement(
+                    emoji="🤫",
+                    title="LURKER LORD",
+                    description="Fewest messages but always watching from the shadows"
+                ))
 
-        if name == analytics.get_link_lord():
-            awards.append(Award(
-                title="LINK LORD",
-                description="Shared the most URLs",
-                value=f"{stats.url_count} links"
-            ))
-
-        if name == analytics.get_emoji_enthusiast():
-            awards.append(Award(
-                title="EMOJI ENTHUSIAST",
-                description="Used the most emojis",
-                value=f"{stats.emoji_count} emojis"
-            ))
-
-        if name == analytics.get_conversation_catalyst():
-            awards.append(Award(
-                title="CONVERSATION CATALYST",
-                description="Started the most conversations",
-                value=f"{stats.conversation_starts} times"
-            ))
-
+        # Message length achievements
         if name == analytics.get_novelist():
-            awards.append(Award(
-                title="THE NOVELIST",
-                description="Longest average messages",
-                value=f"{stats.avg_message_length:.0f} chars/msg"
+            achievements.append(Achievement(
+                emoji="✍️",
+                title="ESSAYIST",
+                description=f"Avg {stats.avg_message_length:.0f} chars/msg—TL;DR is your middle name"
             ))
+        else:
+            # Check if shortest messages
+            all_lengths = [s.avg_message_length for s in analytics.participant_stats.values()]
+            if stats.avg_message_length == min(all_lengths):
+                achievements.append(Achievement(
+                    emoji="⚡",
+                    title="SPEED TEXTER",
+                    description="Short and sweet—why use many word when few do trick?"
+                ))
 
+        # Time-based achievements
         if stats.is_night_owl:
-            awards.append(Award(
+            achievements.append(Achievement(
+                emoji="🦉",
                 title="NIGHT OWL",
-                description="Active in the wee hours",
-                value=f"Peak: {stats.most_active_hour}:00"
+                description=f"Still going strong at {stats.most_active_hour}:00—sleep is for the weak"
             ))
 
         if stats.is_early_bird:
-            awards.append(Award(
+            achievements.append(Achievement(
+                emoji="🌅",
                 title="EARLY BIRD",
-                description="Up with the sun",
-                value=f"Peak: {stats.most_active_hour}:00"
+                description=f"Up and texting by {stats.most_active_hour}:00—catches all the worms"
             ))
 
-        # Top emoji user award
-        if stats.top_emojis:
-            top_emoji, count = stats.top_emojis[0]
-            awards.append(Award(
-                title=f"{top_emoji} SPECIALIST",
-                description="Favorite emoji",
-                value=f"Used {count} times"
+        # Check for weekend warrior (more messages on weekends)
+        if stats.messages_by_weekday:
+            weekend = stats.messages_by_weekday.get('Saturday', 0) + stats.messages_by_weekday.get('Sunday', 0)
+            weekday = sum(v for k, v in stats.messages_by_weekday.items() if k not in ['Saturday', 'Sunday'])
+            if weekend > 0 and weekday > 0 and (weekend / 2) > (weekday / 5):
+                achievements.append(Achievement(
+                    emoji="📅",
+                    title="WEEKEND WARRIOR",
+                    description="Party mode activated on Saturdays and Sundays"
+                ))
+
+        # Content-based achievements
+        if name == analytics.get_link_lord():
+            achievements.append(Achievement(
+                emoji="🔗",
+                title="LINK DEALER",
+                description=f"Shared {stats.url_count} links—the group's personal curator"
             ))
 
-        return awards
+        if stats.media_count > 50:
+            achievements.append(Achievement(
+                emoji="🎬",
+                title="MEDIA MOGUL",
+                description=f"Dropped {stats.media_count} images/videos—worth a thousand words each"
+            ))
+
+        # Conversation starter achievement
+        if name == analytics.get_conversation_catalyst():
+            achievements.append(Achievement(
+                emoji="🎤",
+                title="CONVERSATION STARTER",
+                description=f"Broke {stats.conversation_starts} silences—always bringing the energy"
+            ))
+
+        # Use LLM to generate a fun personalized achievement
+        llm_achievement = self._generate_llm_achievement(name, stats)
+        if llm_achievement:
+            achievements.append(llm_achievement)
+
+        # Limit to 3-5 achievements
+        return achievements[:5]
+
+    def _generate_llm_achievement(self, name: str, stats: ParticipantStats) -> Achievement | None:
+        """Use LLM to generate a fun, personalized achievement."""
+        messages = self.chat.messages_by_sender.get(name, [])
+        if not messages:
+            return None
+
+        sample = self._sample_messages(messages, n=30)
+        messages_text = self._format_messages_for_llm(sample)
+
+        prompt = f"""Based on these messages from {name}, create ONE funny video-game style achievement for them.
+
+Sample messages:
+{messages_text}
+
+The achievement should be:
+- Based on their personality/communication style (sarcastic? supportive? dramatic? nerdy?)
+- Funny and specific to something you notice in their messages
+- Formatted as: EMOJI|TITLE|DESCRIPTION
+
+Examples:
+💀|ROAST MASTER|Delivered burns so sick they need aloe vera
+🎭|DRAMA MONARCH|Every story is an epic saga with twists
+🧠|WIKIPEDIA BRAIN|Always dropping random knowledge bombs
+🌶️|SPICY TAKE SPECIALIST|Hot opinions served fresh daily
+👻|PHANTOM|Disappears for weeks then drops a novel
+
+Output ONE achievement in the format EMOJI|TITLE|DESCRIPTION (no extra text):"""
+
+        try:
+            response = self.client.generate(
+                prompt,
+                system_prompt="You create funny, specific video-game achievements. Output exactly one achievement in EMOJI|TITLE|DESCRIPTION format.",
+                temperature=0.9,
+                max_tokens=100
+            ).strip()
+
+            # Parse the response
+            parts = response.split('|')
+            if len(parts) >= 3:
+                return Achievement(
+                    emoji=parts[0].strip(),
+                    title=parts[1].strip().upper(),
+                    description=parts[2].strip()
+                )
+        except Exception:
+            pass
+
+        return None
 
     def generate_tagline(self, name: str) -> str:
         """Generate a witty tagline for a participant."""
@@ -314,8 +400,12 @@ Tagline:"""
         wrapped.personality_summary = self.generate_personality_summary(name)
         wrapped.top_topics = self.generate_top_topics(name)
         wrapped.memorable_quotes = self.find_memorable_quotes(name)
-        wrapped.awards = self.generate_awards(name)
+        wrapped.achievements = self.generate_achievements(name)
         wrapped.tagline = self.generate_tagline(name)
+
+        # Add personality profile from features if available
+        if self.features and name in self.features.personality_profiles:
+            wrapped.personality_profile = self.features.personality_profiles[name]
 
         return wrapped
 
@@ -353,11 +443,11 @@ Group vibe (2-3 sentences, fun and specific):"""
         wrapped = GroupWrapped(chat_name=chat_name)
         wrapped.vibe_check = self.generate_group_vibe()
 
-        # Compile awards ceremony
+        # Compile achievements ceremony
         for name in self.chat.participants:
-            awards = self.generate_awards(name)
-            for award in awards:
-                wrapped.awards_ceremony.append((name, award))
+            achievements = self.generate_achievements(name)
+            for achievement in achievements:
+                wrapped.achievements_ceremony.append((name, achievement))
 
         # Generate summary
         gs = self.analytics.group_stats
@@ -367,6 +457,11 @@ Group vibe (2-3 sentences, fun and specific):"""
                 f"{gs.total_messages:,} messages over {days} days. "
                 f"That's {gs.total_messages // max(days, 1)} messages per day!"
             )
+
+        # Add features if available
+        if self.features:
+            wrapped.topic_timeline = self.features.topic_timeline
+            wrapped.top_threads = self.features.top_threads
 
         return wrapped
 
@@ -401,6 +496,6 @@ if __name__ == '__main__':
     print(f"\nMemorable Quotes:")
     for quote in wrapped.memorable_quotes:
         print(f"  \"{quote}\"")
-    print(f"\nAwards:")
-    for award in wrapped.awards:
-        print(f"  {award.title}: {award.description} ({award.value})")
+    print(f"\nAchievements:")
+    for ach in wrapped.achievements:
+        print(f"  {ach.emoji} {ach.title}: {ach.description}")
