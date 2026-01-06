@@ -1,0 +1,15 @@
+[project]
+name = "whatsapp-wrapped"
+version = "0.1.0"
+description = "WhatsApp Wrapped 2025 - Spotify-style chat analysis"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "requests>=2.31.0",
+    "rank-bm25>=0.2.2",
+    "numpy>=1.26.0",
+    "rich>=13.7.0",
+]
+
+[project.scripts]
+whatsapp-wrapped = "main:main"
